@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      target: development
+    volumes:
+      - .:/app
+      - ~/.cache/pip:/root/.cache/pip
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+      - DISPLAY=host.docker.internal:0.0  # For GUI on macOS/Windows
+      - QT_QUICK_BACKEND=software  # For headless environments
+    working_dir: /app
+    tty: true
+    stdin_open: true
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  # Uncomment and configure these services as needed
+  # redis:
+  #   image: redis:alpine
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+
+  # postgres:
+  #   image: postgres:13-alpine
+  #   environment:
+  #     POSTGRES_USER: appuser
+  #     POSTGRES_PASSWORD: yoursecurepassword
+  #     POSTGRES_DB: aichat
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+
+# volumes:
+#   redis_data:
+#   postgres_data:
