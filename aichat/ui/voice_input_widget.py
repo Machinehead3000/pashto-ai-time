@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QIcon, QPixmap, QColor
 
-from ..multimodal import MultiModalProcessor
+from multimodal import MultiModalProcessor
 
 
 class VoiceInputThread(QThread):

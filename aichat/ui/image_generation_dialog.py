@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QSize
 from PyQt5.QtGui import QPixmap, QIcon, QFont, QTextCursor
 
-from ...multimodal import MultiModalProcessor
+from multimodal import MultiModalProcessor
 
 
 class ImageGenerationDialog(QDialog):

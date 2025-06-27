@@ -11,6 +11,9 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QSize
 from PyQt5.QtGui import QIcon, QFont, QPixmap, QColor
+import shutil
+import requests
+from pathlib import Path
 
 from aichat.ai.plugins import get_plugin_manager, AIPlugin
 from aichat.utils.resource_loader import load_icon
@@ -302,13 +305,47 @@ class PluginManagerWidget(QWidget):
     
     def _install_plugin(self):
         """Handle install plugin button click."""
-        # TODO: Implement plugin installation from file or URL
-        QMessageBox.information(
-            self,
-            "Install Plugin",
-            "Plugin installation will be implemented in a future version.",
-            QMessageBox.Ok
-        )
+        # Ask user for install method
+        options = ["Install from File", "Install from URL"]
+        method, ok = QInputDialog.getItem(self, "Install Plugin", "How would you like to install the plugin?", options, 0, False)
+        if not ok:
+            return
+        plugins_dir = Path(__file__).parent.parent / "ai" / "plugins"
+        plugins_dir.mkdir(parents=True, exist_ok=True)
+        if method == "Install from File":
+            file_path, _ = QFileDialog.getOpenFileName(self, "Select Plugin File", str(plugins_dir), "Python Files (*.py)")
+            if not file_path:
+                return
+            dest_path = plugins_dir / Path(file_path).name
+            if dest_path.exists():
+                QMessageBox.warning(self, "Plugin Exists", f"A plugin named '{dest_path.name}' already exists.")
+                return
+            try:
+                shutil.copy(file_path, dest_path)
+                self._load_plugins()
+                QMessageBox.information(self, "Plugin Installed", f"Plugin '{dest_path.name}' installed successfully.")
+            except Exception as e:
+                QMessageBox.critical(self, "Install Failed", f"Failed to install plugin: {e}")
+        elif method == "Install from URL":
+            url, ok = QInputDialog.getText(self, "Install from URL", "Enter the URL of the plugin Python file:")
+            if not ok or not url.strip():
+                return
+            try:
+                response = requests.get(url.strip(), timeout=15)
+                response.raise_for_status()
+                filename = url.strip().split("/")[-1]
+                if not filename.endswith(".py"):
+                    filename += ".py"
+                dest_path = plugins_dir / filename
+                if dest_path.exists():
+                    QMessageBox.warning(self, "Plugin Exists", f"A plugin named '{dest_path.name}' already exists.")
+                    return
+                with open(dest_path, "wb") as f:
+                    f.write(response.content)
+                self._load_plugins()
+                QMessageBox.information(self, "Plugin Installed", f"Plugin '{dest_path.name}' installed successfully from URL.")
+            except Exception as e:
+                QMessageBox.critical(self, "Install Failed", f"Failed to install plugin from URL: {e}")
 
 
 # Example usage

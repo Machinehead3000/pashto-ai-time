@@ -1,4 +1,4 @@
-""
+"""
 Internationalization (i18n) package for the Pashto AI Chat application.
 
 This package provides localization and internationalization support,

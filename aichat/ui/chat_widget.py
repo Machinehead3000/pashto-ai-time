@@ -10,8 +10,9 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QSize, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QTextCursor, QTextCharFormat, QColor, QPixmap, QPainter, QLinearGradient
 
-from ...learning.data_collector import DataCollector
-from .feedback_dialog import FeedbackDialog, FeedbackButton
+from aichat.learning.data_collector import DataCollector
+from aichat.ui.feedback_dialog import FeedbackDialog, FeedbackButton
+from aichat.ui.prompt_library_dialog import PromptLibraryDialog
 
 class ChatMessage(QWidget):
     """A single chat message widget with avatar, bubble styling, and feedback."""
@@ -265,6 +266,32 @@ class ChatWidget(QWidget):
             }
         """)
         
+        # Prompt Library button
+        self.prompt_library_btn = QPushButton("Prompts")
+        self.prompt_library_btn.setFixedSize(80, 40)
+        self.prompt_library_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, 
+                                          stop:0 #00f0ff, stop:1 #ff00ff);
+                color: #0a0a12;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 12px;
+                letter-spacing: 1px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                          stop:0 #00c8d7, stop:1 #ff69b4);
+                box-shadow: 0 0 15px rgba(255, 0, 255, 0.5);
+            }
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                          stop:0 #008c99, stop:1 #cc00cc);
+            }
+        """)
+        self.prompt_library_btn.clicked.connect(self.open_prompt_library)
+        
         # Send button
         self.send_button = QPushButton("SEND")
         self.send_button.setFixedSize(100, 40)
@@ -298,6 +325,7 @@ class ChatWidget(QWidget):
         # Input layout
         input_layout = QHBoxLayout()
         input_layout.addWidget(self.message_input)
+        input_layout.addWidget(self.prompt_library_btn)
         input_layout.addWidget(self.send_button)
         
         # Add widgets to main layout
@@ -435,3 +463,10 @@ class ChatWidget(QWidget):
             self.on_send_clicked()
             return
         super().keyPressEvent(event)
+
+    def open_prompt_library(self):
+        dialog = PromptLibraryDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            prompt_text = dialog.get_selected_prompt_text()
+            if prompt_text:
+                self.message_input.setPlainText(prompt_text)

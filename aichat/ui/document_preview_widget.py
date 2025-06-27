@@ -15,7 +15,7 @@ from PyQt5.QtCore import Qt, QSize, pyqtSignal, QThread, pyqtSlot
 from PyQt5.QtGui import QTextCursor, QFont, QIcon, QTextCharFormat, QTextDocument, QSyntaxHighlighter, QTextFormat
 
 from aichat.utils.file_analyzer import FileAnalyzer
-from aichat.models.base import BaseModel
+from aichat.models.base import BaseAIModel
 from aichat.models.deepseek import DeepSeekModel
 from aichat.models.mistral import MistralModel
 
@@ -39,7 +39,7 @@ class DocumentWorker(QThread):
     finished = pyqtSignal(dict)  # result dict with 'type', 'content', 'error' keys
     progress = pyqtSignal(int)   # progress percentage
     
-    def __init__(self, model: BaseModel, content: str, **kwargs):
+    def __init__(self, model: BaseAIModel, content: str, **kwargs):
         super().__init__()
         self.model = model
         self.content = content
@@ -534,7 +534,7 @@ class DocumentPreviewWidget(QWidget):
             # Resize columns to fit content
             self.content_table.resizeColumnsToContents()
     
-    def set_model(self, model: BaseModel):
+    def set_model(self, model: BaseAIModel):
         """Set the AI model to use for summarization and Q&A."""
         self.model = model
         # Update UI to reflect model availability

@@ -25,8 +25,8 @@ from PyQt5.QtWidgets import (
 from ..learning.data_collector import DataCollector
 from ..localization import i18n, tr
 from ..models import DeepSeekModel, MistralModel
-from ..models.base import BaseModel
-from ..multimodal import MultiModalProcessor
+from ..models.base import BaseAIModel
+from multimodal import MultiModalProcessor
 from .chat_widget import ChatWidget
 from .code_execution_widget import CodeExecutionWidget
 from .conversation_dialog import ConversationDialog
@@ -247,6 +247,54 @@ class MainWindow(QMainWindow):
         docs_action = QAction("Documentation", self)
         docs_action.triggered.connect(self.show_documentation)
         help_menu.addAction(docs_action)
+
+        # Features menu
+        features_menu = menubar.addMenu("&Features")
+
+        # Prompt Library
+        prompt_library_action = QAction("Prompt Library", self)
+        prompt_library_action.triggered.connect(self.show_prompt_library)
+        features_menu.addAction(prompt_library_action)
+
+        # Plugin Manager
+        plugin_manager_action = QAction("Plugin Manager", self)
+        plugin_manager_action.triggered.connect(self.show_plugin_manager)
+        features_menu.addAction(plugin_manager_action)
+
+        # Document Preview
+        doc_preview_action = QAction("Document Preview", self)
+        doc_preview_action.triggered.connect(lambda: self.document_dock.setVisible(True))
+        features_menu.addAction(doc_preview_action)
+
+        # Image Generation
+        image_gen_action = QAction("Image Generation", self)
+        image_gen_action.triggered.connect(self.show_image_generation)
+        features_menu.addAction(image_gen_action)
+
+        # File Upload
+        file_upload_action = QAction("File Upload", self)
+        file_upload_action.triggered.connect(self.show_file_upload)
+        features_menu.addAction(file_upload_action)
+
+        # Code Editor
+        code_editor_action = QAction("Code Editor", self)
+        code_editor_action.triggered.connect(self.show_code_editor)
+        features_menu.addAction(code_editor_action)
+
+        # Voice Input
+        voice_input_action = QAction("Voice Input", self)
+        voice_input_action.triggered.connect(self.show_voice_input)
+        features_menu.addAction(voice_input_action)
+
+        # Text-to-Speech
+        tts_action = QAction("Text-to-Speech", self)
+        tts_action.triggered.connect(self.show_tts)
+        features_menu.addAction(tts_action)
+
+        # Settings
+        settings_action = QAction("Settings", self)
+        settings_action.triggered.connect(self.show_settings)
+        features_menu.addAction(settings_action)
     
     def create_toolbar(self):
         """Create the toolbar."""
@@ -769,6 +817,23 @@ class MainWindow(QMainWindow):
             event.accept()
         else:
             event.ignore()
+
+    def show_prompt_library(self):
+        from .prompt_library_dialog import PromptLibraryDialog
+        dialog = PromptLibraryDialog(self)
+        dialog.exec_()
+
+    def show_plugin_manager(self):
+        from .plugin_manager import PluginManagerWidget
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Plugin Manager")
+        layout = QVBoxLayout(dialog)
+        widget = PluginManagerWidget()
+        layout.addWidget(widget)
+        dialog.setLayout(layout)
+        dialog.resize(600, 400)
+        dialog.exec_()
 
 if __name__ == "__main__":
     # Set up logging

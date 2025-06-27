@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QIcon
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 
-from ..multimodal import MultiModalProcessor
+from multimodal import MultiModalProcessor
 
 
 class TTSThread(QThread):

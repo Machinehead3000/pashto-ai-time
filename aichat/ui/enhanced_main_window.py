@@ -34,7 +34,7 @@ from ..ai.plugins import get_plugin_manager
 from ..core.settings import settings_manager
 from ..i18n.localization import tr, set_language, is_rtl_language, get_available_languages
 from ..memory import MemoryManager
-from ..models import BaseModel
+from ..models import BaseAIModel
 from ..utils.resource_loader import load_icon, load_pixmap, resource_loader
 from .chat_widget import ChatWidget
 from .plugin_manager import PluginManagerWidget

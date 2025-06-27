@@ -3,13 +3,14 @@ API key management dialog with validation and testing.
 """
 from typing import Optional, Callable, Dict, Any
 
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QUrl
 from PyQt5.QtGui import QIcon, QPixmap, QColor
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QFormLayout, QMessageBox, QSizePolicy,
     QSpacerItem, QFrame, QComboBox, QToolButton
 )
+import requests
 
 from ..utils.api_key_manager import APIKeyManager, test_api_key
 
@@ -271,7 +272,7 @@ class APIKeyDialog(QDialog):
     def open_api_key_help(self):
         """Open the API key help URL in the default browser."""
         from PyQt5.QtGui import QDesktopServices
-        QDesktopServices.openUrl(self.key_help_url)
+        QDesktopServices.openUrl(QUrl(self.key_help_url))
     
     def accept(self):
         """Handle dialog accept (Save button)."""

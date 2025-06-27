@@ -20,7 +20,7 @@ from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QAbstractItemView, QProgressBar, 
     QSizePolicy, QMenu, QAction, QDialog, QTextEdit, QDialogButtonBox
 )
-from PyQt5.QtCore import Qt, QMimeData, QSize, pyqtSignal, QThread, QObject
+from PyQt5.QtCore import Qt, QMimeData, QSize, pyqtSignal, QThread, QObject, pyqtSlot
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPixmap, QFont, QColor
 
 from ..utils.file_analyzer import FileAnalyzer

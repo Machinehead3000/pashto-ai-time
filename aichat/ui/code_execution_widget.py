@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QProcess, QTimer
 from PyQt5.QtGui import QTextCursor, QFont, QTextCharFormat, QColor, QSyntaxHighlighter, QTextFormat
 
-from ...code_interpreter import CodeInterpreter
+from code_interpreter import CodeInterpreter
 
 class PythonHighlighter(QSyntaxHighlighter):
     """Syntax highlighter for Python code."""
