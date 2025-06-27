@@ -23,18 +23,24 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 try:
     from aichat.ui.api_key_dialog import APIKeyDialog
     from aichat.utils.api_key_manager import APIKeyManager
+    from aichat.ui.plugin_manager import PluginManagerWidget
+    from aichat.ui.tts_widget import TTSWidget
+    from aichat.memory import manager as memory
+    from aichat.profiles import manager as profiles
 except ImportError:
     # Fallback for direct execution
     from aichat.ui.api_key_dialog import APIKeyDialog
     from aichat.utils.api_key_manager import APIKeyManager
+    from aichat.ui.plugin_manager import PluginManagerWidget
+    from aichat.ui.tts_widget import TTSWidget
+    from aichat.memory import manager as memory
+    from aichat.profiles import manager as profiles
 
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name
 from pygments.formatters import HtmlFormatter
 import re
 
-import memory
-import profiles
 import multimodal
 
 # --- Model Configuration ---
@@ -99,6 +105,7 @@ class AIWorker(QThread):
         self.api_key = api_key
 
     def run(self):
+        # Uncommented: Real API call for AI response
         import requests
         try:
             url = "https://openrouter.ai/api/v1/chat/completions"
@@ -159,10 +166,17 @@ class FreeAIChatApp(QMainWindow):
             # Initialize API key manager
             self.api_key_manager = APIKeyManager()
             
-            # Load settings and preferences
-            self.memory_data = memory.load_memory()
-            self.conversation_history = self.memory_data.get("history", [])
-            self.user_preferences = self.memory_data.get("preferences", {})
+            # Initialize memory manager
+            self.memory_manager = memory.MemoryManager.get_default()
+            self.user_preferences = self.memory_manager.preferences.to_dict()
+            self.conversation_history = []
+            current_conv = self.memory_manager.get_current_conversation()
+            if current_conv:
+                for msg in current_conv.get_messages():
+                    self.conversation_history.append({"role": msg.role.value, "content": msg.content})
+            
+            # Initialize profile manager
+            self.profile_manager = profiles.ProfileManager()
             
             # Get API key from secure storage
             self.api_key = self.api_key_manager.get_api_key("openrouter") or ""
@@ -298,14 +312,25 @@ class FreeAIChatApp(QMainWindow):
             splitter = QSplitter(Qt.Vertical)
             self.output_text = QTextEdit()
             self.output_text.setReadOnly(True)
-            self.output_text.setMinimumHeight(300)
+            self.output_text.setMinimumHeight(350)
             self.input_text = QTextEdit()
             self.input_text.setPlaceholderText("Type your message here...")
-            self.input_text.setMinimumHeight(150)
+            self.input_text.setMinimumHeight(120)
             splitter.addWidget(self.output_text)
             splitter.addWidget(self.input_text)
             splitter.setSizes([450, 150])
             main_layout.addWidget(splitter, 1)
+
+            # Speak button for TTS
+            self.speak_button = QPushButton("🔊 Speak Last AI Response")
+            self.speak_button.setStyleSheet("background-color: #4caf50; color: white; font-weight: bold; border-radius: 6px; padding: 8px 16px;")
+            self.speak_button.clicked.connect(self.speak_last_ai_response)
+            main_layout.addWidget(self.speak_button, 0, Qt.AlignLeft)
+
+            # TTSWidget (hidden, used for speech)
+            self.tts_widget = TTSWidget(self)
+            self.tts_widget.hide()
+
             button_layout = QHBoxLayout()
             self.send_button = QPushButton("Send Message")
             self.send_button.setStyleSheet("""
@@ -358,6 +383,17 @@ class FreeAIChatApp(QMainWindow):
         exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
+        # Features menu
+        features_menu = menu_bar.addMenu("&Features")
+        plugin_manager_action = QAction("Plugin Manager", self)
+        plugin_manager_action.triggered.connect(self.show_plugin_manager)
+        features_menu.addAction(plugin_manager_action)
+        profiles_action = QAction("Profiles", self)
+        profiles_action.triggered.connect(self.show_profiles_dialog)
+        features_menu.addAction(profiles_action)
+        settings_action = QAction("Settings", self)
+        settings_action.triggered.connect(self.show_settings_dialog)
+        features_menu.addAction(settings_action)
         # Help menu
         help_menu = menu_bar.addMenu("&Help")
         about_action = QAction("&About", self)
@@ -389,22 +425,34 @@ class FreeAIChatApp(QMainWindow):
         self.save_memory()
 
     def show_profiles_dialog(self):
-        profiles_data = profiles.load_profiles()
-        items = list(profiles_data.keys())
+        profiles_list = self.profile_manager.list_profiles()
+        items = [profile.name for profile in profiles_list]
         if not items:
             QMessageBox.information(self, "Profiles", "No profiles saved yet.")
             return
         item, ok = QInputDialog.getItem(self, "Select Profile", "Choose a profile:", items, editable=False)
         if ok and item:
-            self.current_profile = profiles_data[item]
-            self.user_preferences.update(self.current_profile.get("preferences", {}))
-            self.pref_label.setText(self.get_pref_summary())
-            self.save_memory()
+            selected_profile = next((p for p in profiles_list if p.name == item), None)
+            if selected_profile:
+                self.user_preferences.update(selected_profile.ui_preferences.to_dict())
+                self.pref_label.setText(self.get_pref_summary())
+                self.save_memory()
 
     def save_memory(self):
-        self.memory_data["preferences"] = self.user_preferences
-        self.memory_data["history"] = self.conversation_history
-        memory.save_memory(self.memory_data)
+        # Save preferences
+        self.memory_manager.update_preferences(**self.user_preferences)
+        # Save conversation
+        current_conv = self.memory_manager.get_current_conversation()
+        if current_conv:
+            current_conv.messages = []
+            for msg in self.conversation_history:
+                from aichat.memory.models import Message, MessageRole, MessageType
+                current_conv.add_message(Message(
+                    role=MessageRole(msg["role"]),
+                    content=msg["content"],
+                    message_type=MessageType.TEXT
+                ))
+            self.memory_manager._save_conversations()
 
     def send_message(self):
         prompt = self.input_text.toPlainText().strip()
@@ -431,20 +479,34 @@ class FreeAIChatApp(QMainWindow):
         self.save_memory()
 
     def agi_reasoning_loop(self, user_prompt, model_name):
-        # Step 1: Draft
-        draft_prompt = f"You are a helpful AI. Answer the following user question as best as you can.\n\nUser: {user_prompt}\n\nDraft your answer."
+        # Step 1: Draft with human-like system prompt
+        system_prompt = (
+            "You are a helpful, friendly, and conversational AI assistant. "
+            "Respond as a real human would: be empathetic, clear, and use natural language. "
+            "If appropriate, use humor, ask clarifying questions, and show personality."
+        )
+        draft_prompt = f"{system_prompt}\n\nUser: {user_prompt}\n\nDraft your answer as if you were a real human assistant."
         self.append_ai_message("[Drafting answer...]")
         self.run_model_step(draft_prompt, model_name, lambda draft: self.agi_critique_step(user_prompt, draft, model_name))
 
     def agi_critique_step(self, user_prompt, draft, model_name):
         # Step 2: Critique
-        critique_prompt = f"Here is a draft answer to a user question. Critique it for accuracy, clarity, and completeness.\n\nUser: {user_prompt}\nDraft Answer: {draft}\n\nCritique the draft."
+        critique_prompt = (
+            "Here is a draft answer to a user question. Critique it for accuracy, clarity, completeness, and human-likeness. "
+            "Suggest how to make it sound more like a real, friendly person.\n\n"
+            f"User: {user_prompt}\nDraft Answer: {draft}\n\nCritique the draft."
+        )
         self.append_ai_message("[Critiquing draft...]")
         self.run_model_step(critique_prompt, model_name, lambda critique: self.agi_refine_step(user_prompt, draft, critique, model_name))
 
     def agi_refine_step(self, user_prompt, draft, critique, model_name):
         # Step 3: Refine
-        refine_prompt = f"Here is a user question, a draft answer, and a critique. Write a final, improved answer that addresses the critique.\n\nUser: {user_prompt}\nDraft Answer: {draft}\nCritique: {critique}\n\nFinal Answer:"
+        refine_prompt = (
+            "Here is a user question, a draft answer, and a critique. "
+            "Write a final, improved answer that addresses the critique and sounds like a real, friendly, and engaging human. "
+            "Be conversational, empathetic, and clear.\n\n"
+            f"User: {user_prompt}\nDraft Answer: {draft}\nCritique: {critique}\n\nFinal Answer:"
+        )
         self.append_ai_message("[Refining answer...]")
         self.run_model_step(refine_prompt, model_name, self.agi_final_step)
 
@@ -466,16 +528,16 @@ class FreeAIChatApp(QMainWindow):
 
     def run_model_step(self, prompt, model_name, callback):
         # Helper to run a single model step and call callback with the result
-        worker = AIWorker(
+        self.worker = AIWorker(
             [{"role": "user", "content": prompt}],
             model_name,
             self.api_key
         )
         def on_complete(result):
             callback(result)
-        worker.response_completed.connect(on_complete)
-        worker.error_occurred.connect(self.handle_error)
-        worker.start()
+        self.worker.response_completed.connect(on_complete)
+        self.worker.error_occurred.connect(self.handle_error)
+        self.worker.start()
 
     def show_typing_spinner(self, show):
         if show:
@@ -673,6 +735,25 @@ class FreeAIChatApp(QMainWindow):
         except Exception:
             pass
         super().closeEvent(event)
+
+    def show_plugin_manager(self):
+        dlg = PluginManagerWidget(self)
+        dlg.setWindowTitle("Plugin Manager")
+        dlg.resize(900, 700)
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
+    def show_settings_dialog(self):
+        QMessageBox.information(self, "Settings", "Settings dialog coming soon!")
+
+    def speak_last_ai_response(self):
+        # Find the last assistant message
+        for msg in reversed(self.conversation_history):
+            if msg["role"] == "assistant" and msg["content"].strip():
+                self.tts_widget.speak_text(msg["content"])
+                return
+        QMessageBox.information(self, "No AI Response", "There is no AI response to speak yet.")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
