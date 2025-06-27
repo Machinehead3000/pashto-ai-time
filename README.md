@@ -4,6 +4,43 @@ A next-generation desktop AI application with persistent memory, multimodal capa
 
 ![Pashto AI Screenshot](docs/screenshot.png)
 
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.10 or higher
+- pip (Python package manager)
+- Git (for cloning the repository)
+
+### Installation
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/yourusername/pashto-ai.git
+   cd pashto-ai
+   ```
+
+2. **Set up a virtual environment**:
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate  # On Windows
+   source .venv/bin/activate  # On macOS/Linux
+   ```
+
+3. **Install dependencies**:
+   ```bash
+   pip install -r requirements_light.txt
+   ```
+
+4. **Run the application**:
+   ```bash
+   python main.py
+   ```
+
+### Web Deployment
+
+The application is also available as a web app:
+- **Live Demo**: [https://pashto-ai.windsurf.build](https://pashto-ai.windsurf.build)
+
 ## 🏆 Features at a Glance
 
 ### 🌟 Core Capabilities
@@ -34,12 +71,31 @@ A next-generation desktop AI application with persistent memory, multimodal capa
 - **Advanced Tools**: Built-in Python interpreter, web browsing, and file analysis
 - **Custom AI Profiles**: Create and switch between different AI personalities and behaviors
 
-### File Handling & Analysis
-- **Drag & Drop Interface**: Intuitive file upload with visual feedback
-- **Multiple File Formats**: Supports PDF, DOCX, XLSX, CSV, TXT, images, and more
-- **Background Processing**: File analysis doesn't block the UI
-- **Detailed File Insights**: View metadata and content analysis
-- **Batch Processing**: Analyze multiple files simultaneously
+### 📄 Document Processing
+- **Document Preview**: View and navigate through various document formats
+- **AI-Powered Summarization**: Generate concise, detailed, or key point summaries
+- **Document Q&A**: Ask questions about the document content
+- **Multiple Formats**: Supports PDF, DOCX, XLSX, CSV, JSON, and TXT
+- **Metadata Analysis**: View detailed file information and statistics
+- **Background Processing**: Smooth operation without UI freezing
+
+#### Document Features
+- **Smart Summarization**
+  - Multiple summary types (concise, detailed, key points)
+  - Handles large documents with intelligent truncation
+  - Progress tracking during generation
+  
+- **Interactive Q&A**
+  - Ask questions in natural language
+  - Maintains conversation context
+  - Handles follow-up questions
+  - Works with document content for accurate answers
+
+- **Rich Preview**
+  - Clean, readable display of document content
+  - Tabular data visualization for spreadsheets
+  - Metadata and statistics
+  - Responsive layout for different document types
 
 ### AI Models
 - **Multiple Model Support**: 
@@ -53,6 +109,14 @@ A next-generation desktop AI application with persistent memory, multimodal capa
 - **Responsive Design**: Works across different screen sizes
 - **Rich Text Support**: Markdown, code highlighting, and more
 - **Status Indicators**: Clear feedback on operations
+
+## 📚 Documentation
+
+### Document Features Guide
+For detailed information on using document features, see our [Document Features Guide](docs/document_features_guide.md).
+
+### Testing Document Features
+To test document functionality, refer to our [Testing Guide](docs/document_features_testing.md).
 
 ## 🚀 Getting Started
 

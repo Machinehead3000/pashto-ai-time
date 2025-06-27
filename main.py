@@ -1,13 +1,29 @@
 import sys
+import os
 import requests
 import json
+from pathlib import Path
+from typing import Dict, Any, Optional
+
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
     QPushButton, QComboBox, QLabel, QStatusBar, QSplitter, QMessageBox,
-    QScrollBar, QInputDialog
+    QScrollBar, QInputDialog, QAction, QMenu, QMenuBar
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QIcon, QPalette, QColor, QTextCursor
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QUrl
+from PyQt5.QtGui import QFont, QIcon, QPalette, QColor, QTextCursor, QDesktopServices
+
+# Add the project root to the path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Import local modules
+try:
+    from aichat.ui.api_key_dialog import APIKeyDialog
+    from aichat.utils.api_key_manager import APIKeyManager
+except ImportError:
+    # Fallback for direct execution
+    from aichat.ui.api_key_dialog import APIKeyDialog
+    from aichat.utils.api_key_manager import APIKeyManager
 
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name
@@ -71,54 +87,122 @@ class AIWorker(QThread):
 class FreeAIChatApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("pashto ai")
-        self.setGeometry(100, 100, 900, 700)
-        self.setWindowIcon(QIcon(":ai_icon"))
+        self.setWindowTitle("Pashto AI")
+        self.setGeometry(100, 100, 1000, 800)
+        
+        # Initialize API key manager
+        self.api_key_manager = APIKeyManager()
+        
+        # Load settings and preferences
         self.memory_data = memory.load_memory()
         self.conversation_history = self.memory_data.get("history", [])
         self.user_preferences = self.memory_data.get("preferences", {})
-        self.api_key = self.user_preferences.get("openrouter_api_key", "")
+        
+        # Get API key from secure storage
+        self.api_key = self.api_key_manager.get_api_key("openrouter") or ""
+        
+        # Initialize UI
         self.init_ui()
         self.set_dark_theme()
-        self.statusBar().showMessage("Ready. Select a model and start a conversation!")
+        
+        # Check if we need to prompt for API key
         if not self.api_key:
-            self.prompt_api_key()
-    def prompt_api_key(self):
-        msg = ("Enter your OpenRouter API key.\n" 
-               "Get a free key at https://openrouter.ai/ (sign up, go to API Keys).\n" 
-               "You can change this later in Preferences.")
-        key, ok = QInputDialog.getText(self, "OpenRouter API Key Required", msg, text="")
-        if ok and key:
-            self.api_key = key.strip()
-            self.user_preferences["openrouter_api_key"] = self.api_key
-            self.save_memory()
-        else:
-            QMessageBox.warning(self, "API Key Required", "You must enter an API key to use pashto ai.")
-            self.prompt_api_key()
+            self.manage_api_keys()
+        
+        self.statusBar().showMessage("Ready. Select a model and start a conversation!")
+    
+    def manage_api_keys(self):
+        """Open the API key management dialog."""
+        dialog = APIKeyDialog(
+            service_name="OpenRouter",
+            parent=self,
+            test_endpoint="https://openrouter.ai/api/v1/auth/me",
+            key_help_url="https://openrouter.ai/keys"
+        )
+        
+        # Connect signals
+        dialog.api_key_saved.connect(self.on_api_key_saved)
+        
+        # Show dialog
+        if dialog.exec_() == QDialog.Accepted:
+            # API key was saved successfully
+            self.api_key = dialog.api_key_edit.text().strip()
+            self.statusBar().showMessage("API key saved successfully", 3000)
+        elif not self.api_key:
+            # No API key and user cancelled - show warning
+            QMessageBox.warning(
+                self,
+                "API Key Required",
+                "An API key is required to use this application. "
+                "You can set it later from the Settings menu.",
+                QMessageBox.Ok
+            )
+    
+    def on_api_key_saved(self, service_name: str, api_key: str):
+        """Handle API key saved event."""
+        self.api_key = api_key
+        # Update the user preferences for backward compatibility
+        self.user_preferences["openrouter_api_key"] = api_key
+        self.save_memory()
+        
+        # Update status bar
+        self.statusBar().showMessage(f"{service_name.capitalize()} API key saved successfully", 3000)
+        
+        # Enable any UI elements that require an API key
+        self.update_ui_for_api_key_status(True)
+    
     def init_ui(self):
+        # Create menu bar
+        self.create_menu_bar()
+        
+        # Main widget and layout
         main_widget = QWidget()
         main_layout = QVBoxLayout()
-        header = QLabel("pashto ai")
-        header_font = QFont("Arial", 16, QFont.Bold)
-        header.setFont(header_font)
-        header.setAlignment(Qt.AlignCenter)
-        header.setStyleSheet("color: #6e44ff; padding: 15px;")
-        main_layout.addWidget(header)
+        
+        # Instructions
+        instructions = QLabel(
+            "Manage your API keys for different AI services. "
+            "Your keys are stored securely on your computer.\n\n"
+            "Go to Settings > API Keys to manage your API keys."
+        )
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("color: #a0a0c0; padding: 10px;")
+        main_layout.addWidget(instructions)
+        
+        # Add API key status indicator
+        self.api_key_status = QLabel()
+        self.update_api_key_status()
+        main_layout.addWidget(self.api_key_status)
+        
+        # Add a button to manage API keys
+        manage_keys_btn = QPushButton("Manage API Keys")
+        manage_keys_btn.clicked.connect(self.manage_api_keys)
+        manage_keys_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2a4a6a;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 16px;
+                font-weight: bold;
+                margin: 10px;
+            }
+            QPushButton:hover {
+                background-color: #3a5a7a;
+            }
+        """)
+        main_layout.addWidget(manage_keys_btn, 0, Qt.AlignCenter)
+        
         pref_layout = QHBoxLayout()
         self.pref_label = QLabel(self.get_pref_summary())
-        self.pref_label.setStyleSheet("color: #8a8aa3; font-size: 10pt;")
-        pref_btn = QPushButton("Preferences")
-        pref_btn.clicked.connect(self.show_preferences_dialog)
-        profile_btn = QPushButton("Profiles")
-        profile_btn.clicked.connect(self.show_profiles_dialog)
         pref_layout.addWidget(self.pref_label)
-        pref_layout.addWidget(pref_btn)
-        pref_layout.addWidget(profile_btn)
         pref_layout.addStretch()
         main_layout.addLayout(pref_layout)
+        
         model_layout = QHBoxLayout()
         model_label = QLabel("Select AI Model:")
         model_label.setStyleSheet("color: #f0f4ff; font-weight: bold;")
+        model_layout.addWidget(model_label)
         self.model_combo = QComboBox()
         self.model_combo.addItems([OPENROUTER_MODELS[k]["display"] for k in OPENROUTER_MODELS])
         self.model_combo.setStyleSheet("""

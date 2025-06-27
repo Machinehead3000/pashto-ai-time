@@ -26,12 +26,17 @@ from ..learning.data_collector import DataCollector
 from ..localization import i18n, tr
 from ..models import DeepSeekModel, MistralModel
 from ..models.base import BaseModel
+from ..multimodal import MultiModalProcessor
 from .chat_widget import ChatWidget
 from .code_execution_widget import CodeExecutionWidget
 from .conversation_dialog import ConversationDialog
 from .cyberpunk_theme import apply_cyberpunk_theme
 from .file_upload_widget import FileUploadWidget
+from .image_generation_dialog import ImageGenerationDialog
 from .settings_dialog import SettingsDialog
+from .voice_input_widget import VoiceInputWidget
+from .tts_widget import TTSWidget
+from .document_preview_widget import DocumentPreviewWidget
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -57,15 +62,31 @@ class MainWindow(QMainWindow):
         }
         self.current_model = "DeepSeek-R1"
         
-        # Initialize file upload widget
+        # Initialize tool widgets
         self.file_upload_widget = None
         self.code_execution_widget = None
+        self.voice_input_widget = None
+        self.tts_widget = None
+        self.multimodal_processor = MultiModalProcessor()
         
         # Initialize UI
+        # Initialize document preview widget
+        self.document_preview = DocumentPreviewWidget()
+        self.document_dock = QDockWidget("Document Preview", self)
+        self.document_dock.setWidget(self.document_preview)
+        self.document_dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.document_dock)
+        
+        # Set the AI model for document summarization
+        self.document_preview.set_model(self.current_model_instance if hasattr(self, 'current_model_instance') else None)
+        
         self.init_ui()
         
         # Apply cyberpunk theme
         apply_cyberpunk_theme(QApplication.instance())
+        
+        # Connect document preview signals
+        self.document_preview.analysis_complete.connect(self.on_document_analyzed)
         
         # Start a new conversation
         self.data_collector.start_new_conversation()
@@ -77,6 +98,21 @@ class MainWindow(QMainWindow):
     
     def init_ui(self):
         """Initialize the user interface."""
+        # Set up the main window
+        self.setWindowIcon(QIcon(":/icons/app_icon.png"))
+        
+        # Restore document preview state
+        settings = QSettings("PashtoAI", "AI Chat")
+        if settings.contains("documentPreview/geometry"):
+            self.document_dock.restoreGeometry(settings.value("documentPreview/geometry"))
+            self.document_dock.setVisible(settings.value("documentPreview/visible", True, type=bool))
+            self.document_dock.setFloating(settings.value("documentPreview/floating", False, type=bool))
+            
+            # Only restore dock area if it was saved
+            if settings.contains("documentPreview/area"):
+                area = settings.value("documentPreview/area", Qt.RightDockWidgetArea, type=int)
+                self.addDockWidget(Qt.DockWidgetArea(area), self.document_dock)
+        
         # Create central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -125,24 +161,27 @@ class MainWindow(QMainWindow):
         # File menu
         file_menu = menubar.addMenu("&File")
         
-        new_chat_action = QAction("New Chat", self)
-        new_chat_action.setShortcut("Ctrl+N")
-        new_chat_action.triggered.connect(self.new_chat)
-        file_menu.addAction(new_chat_action)
-        
-        save_chat_action = QAction("Save Chat", self)
-        save_chat_action.setShortcut("Ctrl+S")
-        save_chat_action.triggered.connect(self.save_chat)
-        file_menu.addAction(save_chat_action)
-        
-        load_chat_action = QAction("Load Chat", self)
-        load_chat_action.setShortcut("Ctrl+O")
-        load_chat_action.triggered.connect(self.load_chat)
-        file_menu.addAction(load_chat_action)
+        # Add open document action
+        open_doc_action = QAction("Open &Document...", self)
+        open_doc_action.triggered.connect(self.open_document)
+        file_menu.addAction(open_doc_action)
         
         file_menu.addSeparator()
         
-        exit_action = QAction("Exit", self)
+        # Add open conversation action
+        open_action = QAction("&Open Conversation...", self)
+        open_action.triggered.connect(self.open_conversation)
+        file_menu.addAction(open_action)
+        
+        # Add save conversation action
+        save_action = QAction("&Save Conversation As...", self)
+        save_action.triggered.connect(self.save_conversation_as)
+        file_menu.addAction(save_action)
+        
+        file_menu.addSeparator()
+        
+        # Add exit action
+        exit_action = QAction("E&xit", self)
         exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
@@ -156,6 +195,13 @@ class MainWindow(QMainWindow):
         
         # View menu
         view_menu = menubar.addMenu("&View")
+        
+        # Toggle document preview
+        self.toggle_doc_preview_action = QAction("Document Preview", self)
+        self.toggle_doc_preview_action.setCheckable(True)
+        self.toggle_doc_preview_action.setChecked(True)
+        self.toggle_doc_preview_action.triggered.connect(self.toggle_document_preview)
+        view_menu.addAction(self.toggle_doc_preview_action)
         
         toggle_tools_action = QAction("Toggle Tools Panel", self)
         toggle_tools_action.setShortcut("F4")
@@ -172,6 +218,24 @@ class MainWindow(QMainWindow):
         code_editor_action = QAction("Code Editor", self)
         code_editor_action.triggered.connect(self.show_code_editor)
         tools_menu.addAction(code_editor_action)
+        
+        # Add image generation action
+        image_gen_action = QAction("Generate Image", self)
+        image_gen_action.triggered.connect(self.show_image_generation)
+        tools_menu.addAction(image_gen_action)
+        
+        # Add voice tools submenu
+        voice_menu = tools_menu.addMenu("Voice Tools")
+        
+        # Voice input action
+        voice_input_action = QAction("Voice Input", self)
+        voice_input_action.triggered.connect(self.show_voice_input)
+        voice_menu.addAction(voice_input_action)
+        
+        # Text-to-speech action
+        tts_action = QAction("Text-to-Speech", self)
+        tts_action.triggered.connect(self.show_tts)
+        voice_menu.addAction(tts_action)
         
         # Help menu
         help_menu = menubar.addMenu("&Help")
@@ -197,6 +261,23 @@ class MainWindow(QMainWindow):
         self.model_combo.currentTextChanged.connect(self.on_model_changed)
         toolbar.addWidget(QLabel("Model: "))
         toolbar.addWidget(self.model_combo)
+        
+        # Add separator
+        toolbar.addSeparator()
+        
+        # Add image generation button
+        image_gen_btn = QPushButton()
+        image_gen_btn.setIcon(self.style().standardIcon(getattr(self.style(), 'SP_FileDialogContentsView')))
+        image_gen_btn.setToolTip("Generate Image")
+        image_gen_btn.clicked.connect(self.show_image_generation)
+        toolbar.addWidget(image_gen_btn)
+        
+        # Add voice input button
+        voice_input_btn = QPushButton()
+        voice_input_btn.setIcon(self.style().standardIcon(getattr(self.style(), 'SP_MediaMicrophone')))
+        voice_input_btn.setToolTip("Voice Input")
+        voice_input_btn.clicked.connect(self.show_voice_input)
+        toolbar.addWidget(voice_input_btn)
         
         toolbar.addSeparator()
         
@@ -238,59 +319,23 @@ class MainWindow(QMainWindow):
         self.theme_action.triggered.connect(self.toggle_theme)
         toolbar.addAction(self.theme_action)
     
-    def create_menu_bar(self):
-        """Create the menu bar."""
-        menubar = self.menuBar()
-        
-        # File menu
-        file_menu = menubar.addMenu('&File')
-        
-        new_chat = file_menu.addAction('New Chat')
-        new_chat.setShortcut('Ctrl+N')
-        new_chat.triggered.connect(self.chat_widget.clear_chat)
-        
-        save_chat = file_menu.addAction('Save Chat')
-        save_chat.setShortcut('Ctrl+S')
-        save_chat.triggered.connect(self.save_chat)
-        
-        load_chat = file_menu.addAction('Load Chat')
-        load_chat.setShortcut('Ctrl+O')
-        load_chat.triggered.connect(self.load_chat)
-        
-        file_menu.addSeparator()
-        
-        exit_action = file_menu.addAction('Exit')
-        exit_action.setShortcut('Ctrl+Q')
-        exit_action.triggered.connect(self.close)
-        
-        # Edit menu
-        edit_menu = menubar.addMenu('&Edit')
-        
-        copy_action = edit_menu.addAction('Copy')
-        copy_action.setShortcut('Ctrl+C')
-        copy_action.triggered.connect(self.chat_widget.copy_selected_text)
-        
-        # Help menu
-        help_menu = menubar.addMenu('&Help')
-        
-        about_action = help_menu.addAction('About')
-        about_action.triggered.connect(self.show_about)
-        
-        help_action = help_menu.addAction('Help')
-        help_action.triggered.connect(self.show_help)
-    
-    def set_dark_theme(self):
-        """Legacy method kept for compatibility. Theme is now set via apply_cyberpunk_theme."""
-        pass
-    
     def on_model_changed(self, model_name):
         """Handle model change."""
         self.current_model = model_name
         
-        # Update data collector reference if model supports it
-        model = self.models[model_name]
-        if hasattr(model, 'set_data_collector'):
-            model.set_data_collector(self.data_collector)
+        # Update the current model instance based on the selected model
+        if model_name == "DeepSeek":
+            self.current_model_instance = DeepSeekModel()
+        elif model_name == "Mistral":
+            self.current_model_instance = MistralModel()
+            
+        # Update the chat widget's model
+        if hasattr(self, 'chat_widget'):
+            self.chat_widget.set_model(self.current_model_instance)
+            
+        # Update the document preview's model
+        if hasattr(self, 'document_preview'):
+            self.document_preview.set_model(self.current_model_instance)
             
         self.statusBar().showMessage(f"Switched to {model_name}", 3000)
     
@@ -432,7 +477,7 @@ class MainWindow(QMainWindow):
             "<h2>AI Chat Pro</h2>"
             "<p>Version 0.1.0</p>"
             "<p>A desktop application for chatting with various AI models.</p>"
-            "<p>© 2025 Your Name</p>"
+            "<p> 2025 Your Name</p>"
         )
     
     def show_help(self):
@@ -468,6 +513,69 @@ class MainWindow(QMainWindow):
             self.code_execution_widget.execution_finished.connect(self.on_code_execution_finished)
         
         self.show_tool("Code Editor", self.code_execution_widget)
+    
+    def show_image_generation(self):
+        """Show the image generation dialog."""
+        if not hasattr(self, 'image_gen_dialog') or not self.image_gen_dialog:
+            self.image_gen_dialog = ImageGenerationDialog(
+                parent=self,
+                multimodal_processor=self.multimodal_processor
+            )
+            self.image_gen_dialog.image_generated.connect(self.on_image_generated)
+        
+        self.image_gen_dialog.show()
+        self.image_gen_dialog.raise_()
+        self.image_gen_dialog.activateWindow()
+    
+    def on_image_generated(self, image_path: str):
+        """Handle successful image generation."""
+        if not image_path or not os.path.exists(image_path):
+            return
+            
+        # Show the file upload widget with the generated image
+        self.show_file_upload()
+        
+        # Add the generated image to the file upload widget
+        if self.file_upload_widget:
+            self.file_upload_widget.add_files([image_path])
+    
+    def show_voice_input(self):
+        """Show the voice input widget in the tools panel."""
+        if not hasattr(self, 'voice_input_widget') or not self.voice_input_widget:
+            self.voice_input_widget = VoiceInputWidget(
+                parent=self,
+                processor=self.multimodal_processor
+            )
+            self.voice_input_widget.voice_input_received.connect(self.on_voice_input_received)
+        
+        self.show_tool("Voice Input", self.voice_input_widget)
+    
+    def show_tts(self):
+        """Show the text-to-speech widget in the tools panel."""
+        if not hasattr(self, 'tts_widget') or not self.tts_widget:
+            self.tts_widget = TTSWidget(
+                parent=self,
+                processor=self.multimodal_processor
+            )
+            
+            # Connect to chat widget's text selection signal if available
+            if hasattr(self.chat_widget, 'text_selected'):
+                self.chat_widget.text_selected.connect(self.tts_widget.speak_text)
+        
+        self.show_tool("Text-to-Speech", self.tts_widget)
+    
+    def on_voice_input_received(self, text: str):
+        """Handle voice input received from the voice input widget."""
+        if not text:
+            return
+            
+        # Set the message input field with the transcribed text
+        self.message_input.setPlainText(text)
+        self.message_input.setFocus()
+        
+        # Auto-send if the user has this preference set
+        if self.settings.get("auto_send_voice_input", False):
+            self.send_message()
     
     def show_tool(self, name: str, widget: QWidget):
         """Show a tool in the tools panel."""
@@ -590,7 +698,7 @@ class MainWindow(QMainWindow):
                          "<h2>Pashto AI</h2>"
                          "<p>Version 1.0.0</p>"
                          "<p>An AI-powered chat application with code execution and file analysis capabilities.</p>"
-                         "<p>© 2023 Pashto AI Team</p>")
+                         "<p> 2023 Pashto AI Team</p>")
     
     def show_documentation(self):
         """Open documentation in default browser."""
@@ -641,8 +749,23 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """Handle window close event."""
+        # Save window state and geometry
+        settings = QSettings("PashtoAI", "AI Chat")
+        settings.setValue("geometry", self.saveGeometry())
+        settings.setValue("windowState", self.saveState())
+        
+        # Clean up resources
+        if hasattr(self, 'voice_input_widget'):
+            self.voice_input_widget.cleanup()
+        if hasattr(self, 'tts_widget'):
+            self.tts_widget.cleanup()
+        if hasattr(self, 'code_execution_widget') and self.code_execution_widget:
+            self.code_execution_widget.cleanup()
+            
+        if hasattr(self, 'tts_widget') and self.tts_widget:
+            self.tts_widget.cleanup()
+        
         if self.chat_widget.maybe_save():
-            self.save_settings()
             event.accept()
         else:
             event.ignore()
