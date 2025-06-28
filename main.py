@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 import threading
 import subprocess
-from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtWidgets import QMessageBox, QDialog
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
@@ -146,7 +146,8 @@ class AIWorker(QThread):
                         if data.get('finish_reason') == 'stop':
                             break
                     except Exception as ex:
-                        print(f"[AIWorker Streaming Error]: {ex}")
+                        # Enhanced error logging: print the raw line that failed
+                        print(f"[AIWorker Streaming Error]: {ex}\nRaw line: {line}")
                         continue
             self.response_completed.emit(full_response)
         except Exception as e:
@@ -479,39 +480,50 @@ class FreeAIChatApp(QMainWindow):
         self.save_memory()
 
     def agi_reasoning_loop(self, user_prompt, model_name):
-        # Step 1: Draft with human-like system prompt
+        # Step 1: Draft with ultra-human-like system prompt
         system_prompt = (
-            "You are a helpful, friendly, and conversational AI assistant. "
-            "Respond as a real human would: be empathetic, clear, and use natural language. "
-            "If appropriate, use humor, ask clarifying questions, and show personality."
+            "You are a warm, witty, and highly empathetic AI assistant. "
+            "Always respond as a real human would: use natural language, humor, ask clarifying questions, and show genuine care for the user's feelings and needs. "
+            "Avoid sounding robotic or generic. If appropriate, use emojis, small talk, or ask the user a question back."
         )
-        draft_prompt = f"{system_prompt}\n\nUser: {user_prompt}\n\nDraft your answer as if you were a real human assistant."
+        draft_prompt = f"{system_prompt}\n\nUser: {user_prompt}\n\nDraft your answer as if you were a real, emotionally intelligent human assistant."
         self.append_ai_message("[Drafting answer...]")
         self.run_model_step(draft_prompt, model_name, lambda draft: self.agi_critique_step(user_prompt, draft, model_name))
 
     def agi_critique_step(self, user_prompt, draft, model_name):
-        # Step 2: Critique
+        # Step 2: Critique for human-likeness and engagement
         critique_prompt = (
-            "Here is a draft answer to a user question. Critique it for accuracy, clarity, completeness, and human-likeness. "
-            "Suggest how to make it sound more like a real, friendly person.\n\n"
+            "Here is a draft answer to a user question. Critique it for accuracy, clarity, completeness, and especially human-likeness. "
+            "Point out anything that sounds robotic, generic, or lacks warmth, humor, or empathy. Suggest how to make it sound more like a real, friendly, and engaging person.\n\n"
             f"User: {user_prompt}\nDraft Answer: {draft}\n\nCritique the draft."
         )
         self.append_ai_message("[Critiquing draft...]")
         self.run_model_step(critique_prompt, model_name, lambda critique: self.agi_refine_step(user_prompt, draft, critique, model_name))
 
     def agi_refine_step(self, user_prompt, draft, critique, model_name):
-        # Step 3: Refine
+        # Step 3: Refine to address critique and maximize human-likeness
         refine_prompt = (
             "Here is a user question, a draft answer, and a critique. "
-            "Write a final, improved answer that addresses the critique and sounds like a real, friendly, and engaging human. "
-            "Be conversational, empathetic, and clear.\n\n"
+            "Write a final, improved answer that addresses the critique and sounds like a real, friendly, witty, and engaging human. "
+            "Be conversational, empathetic, and clear. If appropriate, add a touch of humor, ask a follow-up question, or use emojis.\n\n"
             f"User: {user_prompt}\nDraft Answer: {draft}\nCritique: {critique}\n\nFinal Answer:"
         )
         self.append_ai_message("[Refining answer...]")
-        self.run_model_step(refine_prompt, model_name, self.agi_final_step)
+        self.run_model_step(refine_prompt, model_name, lambda final: self.agi_humanize_step(user_prompt, final, model_name))
+
+    def agi_humanize_step(self, user_prompt, final_answer, model_name):
+        # Step 4: Humanize - rewrite to maximize personality and engagement
+        humanize_prompt = (
+            "Here is a user question and a final AI answer. "
+            "Rewrite the answer to maximize human-likeness, warmth, and personality. "
+            "Make it sound like a real, emotionally intelligent, and engaging person. Use natural language, empathy, humor, and, if appropriate, emojis or small talk.\n\n"
+            f"User: {user_prompt}\nFinal AI Answer: {final_answer}\n\nHumanized Answer:"
+        )
+        self.append_ai_message("[Humanizing answer...]")
+        self.run_model_step(humanize_prompt, model_name, self.agi_final_step)
 
     def agi_final_step(self, final_answer):
-        # Replace the last [Refining answer...] message with the final answer
+        # Replace the last [Humanizing answer...] message with the final answer
         if self.conversation_history and self.conversation_history[-1]["role"] == "assistant":
             self.conversation_history[-1]["content"] = final_answer
         else:
