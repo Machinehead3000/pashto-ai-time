@@ -226,12 +226,12 @@ class APIKeyDialog(QDialog):
     def _perform_key_test(self, api_key: str):
         """Perform the actual API key test in a non-blocking way."""
         try:
-            is_valid = test_api_key(api_key, self.service_name)
+            is_valid, error_msg = test_api_key(api_key, self.service_name)
             if is_valid:
                 self.show_status("✓ API key is valid", "success")
                 self.save_btn.setEnabled(True)
             else:
-                self.show_status("✗ Invalid API key", "error")
+                self.show_status(f"✗ Invalid API key: {error_msg}", "error")
                 self.save_btn.setEnabled(False)
         except Exception as e:
             self.show_status(f"Error: {str(e)}", "error")

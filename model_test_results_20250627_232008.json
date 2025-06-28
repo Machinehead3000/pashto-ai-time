@@ -1,0 +1,17 @@
+[
+  {
+    "model": "Mistral-7B",
+    "status": "error",
+    "error": "API error: 401 - {\"error\":{\"message\":\"No auth credentials found\",\"code\":401}}"
+  },
+  {
+    "model": "Llama-3-8B",
+    "status": "error",
+    "error": "API error: 401 - {\"error\":{\"message\":\"No auth credentials found\",\"code\":401}}"
+  },
+  {
+    "model": "DeepSeek-Chat",
+    "status": "error",
+    "error": "API error: 401 - {\"error\":{\"message\":\"No auth credentials found\",\"code\":401}}"
+  }
+]

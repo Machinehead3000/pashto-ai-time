@@ -108,47 +108,100 @@ class AIWorker(QThread):
         # Uncommented: Real API call for AI response
         import requests
         try:
+            print(f"[DEBUG] Starting AI request with model: {self.model_name}")
+            print(f"[DEBUG] API Key: {self.api_key[:5]}...{self.api_key[-5:] if self.api_key else 'None'}")
+            
             url = "https://openrouter.ai/api/v1/chat/completions"
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
+            
+            # Get the actual model ID from OPENROUTER_MODELS
+            model_id = OPENROUTER_MODELS.get(self.model_name, {}).get("model", self.model_name)
+            
             payload = {
-                "model": OPENROUTER_MODELS[self.model_name]["model"],
+                "model": model_id,
                 "messages": self.history,
                 "stream": True
             }
+            
+            print(f"[DEBUG] Sending request to {url}")
+            print(f"[DEBUG] Model ID: {model_id}")
+            print(f"[DEBUG] Payload: {json.dumps(payload, indent=2)}")
+            
             response = requests.post(url, headers=headers, json=payload, timeout=120, stream=True)
+            
+            print(f"[DEBUG] Response status code: {response.status_code}")
+            print(f"[DEBUG] Response headers: {dict(response.headers)}")
+            
             if response.status_code != 200:
+                error_content = response.text
+                print(f"[AIWorker API Error] Status: {response.status_code}")
+                print(f"[AIWorker API Error] Response: {error_content}")
+                
                 try:
                     err_json = response.json()
+                    print(f"[AIWorker API Error] JSON: {err_json}")
                     if 'error' in err_json:
-                        err_msg = err_json['error'].get('message', response.text)
-                        print(f"[AIWorker API Error]: {err_msg}")
-                        self.error_occurred.emit(f"API Error: {err_msg}")
-                        return
+                        err_msg = err_json['error'].get('message', error_content)
+                        error_msg = f"API Error ({response.status_code}): {err_msg}"
+                    else:
+                        error_msg = f"API Error ({response.status_code}): {error_content}"
                 except Exception as ex:
                     print(f"[AIWorker API Error - JSON parse]: {ex}")
-                print(f"[AIWorker System Error]: {response.status_code}\nResponse: {response.text}")
-                self.error_occurred.emit(f"System Error: {response.status_code}\nResponse: {response.text}")
+                    error_msg = f"API Error ({response.status_code}): {error_content}"
+                
+                print(f"[AIWorker] Emitting error: {error_msg}")
+                self.error_occurred.emit(error_msg)
                 return
             full_response = ""
+            print("[DEBUG] Starting to process response stream...")
+            
             for line in response.iter_lines():
                 if line:
                     try:
-                        data = json.loads(line.decode())
+                        # Remove 'data: ' prefix if present
+                        line_str = line.decode('utf-8')
+                        if line_str.startswith('data: '):
+                            line_str = line_str[6:].strip()
+                        
+                        # Skip empty lines or [DONE] message
+                        if not line_str or line_str == '[DONE]':
+                            print("[DEBUG] Received empty line or [DONE]")
+                            continue
+                            
+                        print(f"[DEBUG] Raw line: {line_str}")
+                        data = json.loads(line_str)
+                        
                         if 'choices' in data and data['choices']:
-                            delta = data['choices'][0]['delta']
-                            if 'content' in delta:
+                            delta = data['choices'][0].get('delta', {})
+                            if 'content' in delta and delta['content']:
                                 token = delta['content']
+                                print(f"[DEBUG] Received token: {token}")
                                 full_response += token
                                 self.token_received.emit(token)
-                        if data.get('finish_reason') == 'stop':
-                            break
+                            
+                            # Check for finish reason
+                            finish_reason = data['choices'][0].get('finish_reason')
+                            if finish_reason:
+                                print(f"[DEBUG] Finish reason: {finish_reason}")
+                                if finish_reason == 'stop':
+                                    break
+                                elif finish_reason == 'length':
+                                    print("[WARNING] Response was truncated due to max_tokens limit")
+                                    break
+                    except json.JSONDecodeError as je:
+                        print(f"[ERROR] Failed to parse JSON: {line_str}")
+                        print(f"[ERROR] JSON Error: {je}")
                     except Exception as ex:
-                        # Enhanced error logging: print the raw line that failed
-                        print(f"[AIWorker Streaming Error]: {ex}\nRaw line: {line}")
-                        continue
+                        print(f"[ERROR] Error processing stream: {ex}")
+                        print(f"[ERROR] Raw line that caused error: {line}")
+            
+            print(f"[DEBUG] Completed response. Total tokens: {len(full_response)}")
+            if not full_response:
+                print("[WARNING] Empty response received from the API")
+            
             self.response_completed.emit(full_response)
         except Exception as e:
             import traceback
@@ -460,79 +513,66 @@ class FreeAIChatApp(QMainWindow):
         if not prompt:
             QMessageBox.warning(self, "Empty Input", "Please enter a message.")
             return
+            
+        # Add user preferences if any
         if self.user_preferences.get("name") or self.user_preferences.get("style"):
             pref_str = f"(Call me {self.user_preferences.get('name', '')} and always explain like {self.user_preferences.get('style', '')})\n"
             prompt = pref_str + prompt
+            
+        # Add user message to conversation history
         self.conversation_history.append({"role": "user", "content": prompt})
         self.redisplay_chat_history()
         self.input_text.clear()
+        
+        # Get selected model
         model_index = self.model_combo.currentIndex()
         model_name = list(OPENROUTER_MODELS.keys())[model_index]
+        
         # If Fastest Available, pick the fastest healthy model
         if model_name == "Fastest Available":
             self.select_fastest_model()
             model_index = self.model_combo.currentIndex()
             model_name = list(OPENROUTER_MODELS.keys())[model_index]
+            
+        # Disable send button and show typing indicator
         self.send_button.setEnabled(False)
-        self.status_label.setText(f"Status: AGI Reasoning Loop with {OPENROUTER_MODELS[model_name]['display']}...")
+        self.status_label.setText(f"Status: Generating response with {OPENROUTER_MODELS[model_name]['display']}...")
         self.show_typing_spinner(True)
-        self.agi_reasoning_loop(prompt, model_name)
+        
+        # Create system message with instructions for the AI
+        system_message = {
+            "role": "system",
+            "content": "You are a helpful and friendly AI assistant. Provide clear, concise, and accurate responses. "
+                      "Be conversational and engaging, but get straight to the point when needed."
+        }
+        
+        # Prepare the messages for the API call
+        messages = [system_message] + self.conversation_history
+        
+        # Create and start the worker thread
+        self.worker = AIWorker(messages, model_name, self.api_key)
+        self.worker.response_completed.connect(self.on_ai_response)
+        self.worker.error_occurred.connect(self.handle_error)
+        self.worker.start()
+        
+        # Save the conversation state
         self.save_memory()
-
-    def agi_reasoning_loop(self, user_prompt, model_name):
-        # Step 1: Draft with ultra-human-like system prompt
-        system_prompt = (
-            "You are a warm, witty, and highly empathetic AI assistant. "
-            "Always respond as a real human would: use natural language, humor, ask clarifying questions, and show genuine care for the user's feelings and needs. "
-            "Avoid sounding robotic or generic. If appropriate, use emojis, small talk, or ask the user a question back."
-        )
-        draft_prompt = f"{system_prompt}\n\nUser: {user_prompt}\n\nDraft your answer as if you were a real, emotionally intelligent human assistant."
-        self.append_ai_message("[Drafting answer...]")
-        self.run_model_step(draft_prompt, model_name, lambda draft: self.agi_critique_step(user_prompt, draft, model_name))
-
-    def agi_critique_step(self, user_prompt, draft, model_name):
-        # Step 2: Critique for human-likeness and engagement
-        critique_prompt = (
-            "Here is a draft answer to a user question. Critique it for accuracy, clarity, completeness, and especially human-likeness. "
-            "Point out anything that sounds robotic, generic, or lacks warmth, humor, or empathy. Suggest how to make it sound more like a real, friendly, and engaging person.\n\n"
-            f"User: {user_prompt}\nDraft Answer: {draft}\n\nCritique the draft."
-        )
-        self.append_ai_message("[Critiquing draft...]")
-        self.run_model_step(critique_prompt, model_name, lambda critique: self.agi_refine_step(user_prompt, draft, critique, model_name))
-
-    def agi_refine_step(self, user_prompt, draft, critique, model_name):
-        # Step 3: Refine to address critique and maximize human-likeness
-        refine_prompt = (
-            "Here is a user question, a draft answer, and a critique. "
-            "Write a final, improved answer that addresses the critique and sounds like a real, friendly, witty, and engaging human. "
-            "Be conversational, empathetic, and clear. If appropriate, add a touch of humor, ask a follow-up question, or use emojis.\n\n"
-            f"User: {user_prompt}\nDraft Answer: {draft}\nCritique: {critique}\n\nFinal Answer:"
-        )
-        self.append_ai_message("[Refining answer...]")
-        self.run_model_step(refine_prompt, model_name, lambda final: self.agi_humanize_step(user_prompt, final, model_name))
-
-    def agi_humanize_step(self, user_prompt, final_answer, model_name):
-        # Step 4: Humanize - rewrite to maximize personality and engagement
-        humanize_prompt = (
-            "Here is a user question and a final AI answer. "
-            "Rewrite the answer to maximize human-likeness, warmth, and personality. "
-            "Make it sound like a real, emotionally intelligent, and engaging person. Use natural language, empathy, humor, and, if appropriate, emojis or small talk.\n\n"
-            f"User: {user_prompt}\nFinal AI Answer: {final_answer}\n\nHumanized Answer:"
-        )
-        self.append_ai_message("[Humanizing answer...]")
-        self.run_model_step(humanize_prompt, model_name, self.agi_final_step)
-
-    def agi_final_step(self, final_answer):
-        # Replace the last [Humanizing answer...] message with the final answer
-        if self.conversation_history and self.conversation_history[-1]["role"] == "assistant":
-            self.conversation_history[-1]["content"] = final_answer
-        else:
-            self.append_ai_message(final_answer)
+        
+    def on_ai_response(self, response):
+        """Handle the AI's response and update the UI."""
+        # Add the AI's response to the conversation history
+        self.conversation_history.append({"role": "assistant", "content": response})
         self.redisplay_chat_history()
+        
+        # Update UI state
         self.status_label.setText("Status: Ready")
         self.send_button.setEnabled(True)
         self.show_typing_spinner(False)
+        
+        # Save the updated conversation
         self.save_memory()
+
+
 
     def append_ai_message(self, text):
         self.conversation_history.append({"role": "assistant", "content": text})

@@ -10,6 +10,7 @@ from typing import Optional, Dict, Any
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +157,7 @@ class APIKeyManager:
             return False
 
 
-def test_api_key(api_key: str, service: str = "openrouter") -> bool:
+def test_api_key(api_key: str, service: str = "openrouter") -> (bool, str):
     """Test if an API key is valid by making a test request.
     
     Args:
@@ -164,24 +165,43 @@ def test_api_key(api_key: str, service: str = "openrouter") -> bool:
         service: The service to test against
         
     Returns:
-        bool: True if the key is valid, False otherwise
+        (bool, str): (True, "") if the key is valid, (False, error_message) otherwise
     """
     if not api_key:
-        return False
+        return False, "No API key provided."
         
     try:
         if service == "openrouter":
+            # Try the auth endpoint first
             url = "https://openrouter.ai/api/v1/auth/me"
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
             }
-            response = requests.get(url, headers=headers, timeout=10)
-            return response.status_code == 200
             
-        # Add other services as needed
-        
-        return False
+            try:
+                response = requests.get(url, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    return True, ""
+                
+                # If auth/me fails, try the models endpoint as fallback
+                models_url = "https://openrouter.ai/api/v1/models"
+                models_response = requests.get(models_url, headers=headers, timeout=10)
+                if models_response.status_code == 200:
+                    return True, ""
+                
+                # If both endpoints failed, try to get error details
+                try:
+                    err_json = response.json()
+                    if 'error' in err_json:
+                        err_msg = err_json['error'].get('message', response.text)
+                        return False, f"API Error: {err_msg}"
+                except Exception:
+                    pass
+                    
+                return False, f"Authentication failed (HTTP {response.status_code})"
+                
+            except requests.exceptions.RequestException as e:
+                return False, f"Connection error: {str(e)}"
     except Exception as e:
-        logger.error(f"API key test failed: {e}")
-        return False
+        return False, f"Network or system error: {str(e)}"
